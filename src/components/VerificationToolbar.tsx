@@ -16,9 +16,28 @@ interface VerificationToolbarProps {
   initialClock: string;
 }
 
-/** `datetime-local` inputs want "YYYY-MM-DDTHH:mm:ss" with no timezone suffix. */
+/**
+ * `datetime-local` inputs want "YYYY-MM-DDTHH:mm:ss" expressed in the
+ * browser's *local* time zone, with no timezone suffix. Per the ECMAScript
+ * date-string spec, a timezone-less string round-trips through `new Date()`
+ * as local time, so we must render the instant's local wall-clock digits
+ * here (via the local getters) rather than slicing the UTC ISO string —
+ * otherwise the displayed value silently represents a different instant in
+ * any non-UTC timezone.
+ */
 function toDatetimeLocalValue(iso: string): string {
-  return iso.slice(0, 19);
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso.slice(0, 19);
+  }
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  const seconds = pad(date.getSeconds());
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
 }
 
 export default function VerificationToolbar({ initialClock }: VerificationToolbarProps) {
