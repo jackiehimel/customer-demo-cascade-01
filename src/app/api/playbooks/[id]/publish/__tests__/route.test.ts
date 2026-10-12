@@ -41,6 +41,18 @@ test("POST publishes a valid draft, supersedes the sibling, and returns 200", as
   assert.equal(v1?.status, "superseded");
 });
 
+test("POST publishing a valid draft triggers the real rule engine, creating COND-001/OPP-001", async () => {
+  await post("PLAYBOOK-001-V2");
+
+  const { loadStore } = await import("../../../../../../server/store/db.ts");
+  const store = loadStore();
+  assert.equal(store.conditions.length, 1);
+  assert.equal(store.conditions[0]?.id, "COND-001");
+  assert.equal(store.opportunities.length, 1);
+  assert.equal(store.opportunities[0]?.id, "OPP-001");
+  assert.ok(store.opportunities[0]?.explanation.rationale.includes("75"));
+});
+
 test("POST records a playbook.published audit event on success", async () => {
   await post("PLAYBOOK-001-V2");
 
