@@ -25,7 +25,16 @@ test("POST /api/admin/reset restores the exact seed snapshot regardless of prior
   const { createSeedStore } = await import("../../../../../server/store/seed.ts");
   const { advanceTo } = await import("../../../../../server/lib/clock.ts");
 
-  // Mutate the store: advance the clock and add a new signal.
+  // Capture the pristine seed snapshot *before* any mutation touches the
+  // store. Comparing `restored` against a `createSeedStore()` call made
+  // *after* the mutation below would be a false positive if `createSeedStore`
+  // ever returned a shared array reference: the in-place `.push()` would
+  // corrupt that later call's output identically, so the comparison would
+  // trivially pass even though reset didn't actually restore the true seed.
+  const pristineSeed = structuredClone(createSeedStore());
+
+  // Mutate the store: advance the clock and add a new signal via the exact
+  // in-place-push pattern `db.ts`'s own JSDoc recommends for future stories.
   await advanceTo(new Date("2024-02-01T00:00:00.000Z"));
   const mutated = loadStore();
   mutated.signals.push({
@@ -41,10 +50,14 @@ test("POST /api/admin/reset restores the exact seed snapshot regardless of prior
   assert.equal(response.status, 200);
 
   const restored = loadStore();
-  assert.deepEqual(restored, createSeedStore());
+  assert.deepEqual(restored, pristineSeed);
+  assert.ok(
+    !restored.signals.some((candidate) => candidate.id === "SIG-999"),
+    "reset must not leak a signal pushed onto a previously loaded store"
+  );
 
   const onDisk = JSON.parse(fs.readFileSync(path.join(tmpDir, ".data", "store.json"), "utf-8"));
-  assert.deepEqual(onDisk, createSeedStore());
+  assert.deepEqual(onDisk, pristineSeed);
 });
 
 test("repeating advance-clock-then-reset produces the same observable state each time", async () => {
