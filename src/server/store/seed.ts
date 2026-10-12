@@ -66,6 +66,26 @@ function createSeedPlaybookVersions(): PlaybookVersion[] {
       },
       createdAt: isoHoursBefore(T0, 24),
     },
+    {
+      // Seed-only fixture that exists purely to exercise the 422 validation
+      // path (QUAL-003): threshold is non-positive, expectedOutcome.assignment
+      // is empty, and businessDaysToConfirm is non-positive. It must never be
+      // publishable and is intentionally excluded from the real
+      // condition/opportunity journey — the rule engine must never reference
+      // it.
+      id: "PLAYBOOK-001-V3-INVALID",
+      playbookId: "PLAYBOOK-001",
+      version: 3,
+      status: "draft",
+      statusHistory: [{ status: "draft", at: isoHoursBefore(T0, 1) }],
+      rule: { id: "RULE-001-V3-INVALID", threshold: -5 },
+      expectedOutcome: {
+        assignment: "",
+        submitted: false,
+        businessDaysToConfirm: 0,
+      },
+      createdAt: isoHoursBefore(T0, 1),
+    },
   ];
 }
 
