@@ -14,6 +14,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { createSeedStore } from "./seed.ts";
 import type { Store } from "./types";
 
 const DATA_DIR = path.join(process.cwd(), ".data");
@@ -24,25 +25,6 @@ declare global {
   var __appStore: Store | undefined;
 }
 
-/** A well-typed, empty store — the shape used the very first time the app runs. */
-function createEmptyStore(): Store {
-  return {
-    institutions: [],
-    programs: [],
-    roles: [],
-    participants: [],
-    courses: [],
-    playbookVersions: [],
-    signals: [],
-    conditions: [],
-    opportunities: [],
-    communicationDrafts: [],
-    outcomes: [],
-    auditEvents: [],
-    clock: { current: new Date(0).toISOString() },
-  };
-}
-
 function writeStoreToDisk(store: Store): void {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   const tmpPath = path.join(DATA_DIR, `.store.json.${process.pid}.${randomUUID()}.tmp`);
@@ -50,11 +32,17 @@ function writeStoreToDisk(store: Store): void {
   fs.renameSync(tmpPath, STORE_PATH);
 }
 
+/**
+ * First-run semantics: `store.json` is only ever created here, and only when
+ * it doesn't already exist. An existing file is always read as-is and never
+ * overwritten with seed data, so re-running the app never clobbers state a
+ * demo or test has accumulated.
+ */
 function readStoreFromDisk(): Store {
   if (!fs.existsSync(STORE_PATH)) {
-    const empty = createEmptyStore();
-    writeStoreToDisk(empty);
-    return empty;
+    const seeded = createSeedStore();
+    writeStoreToDisk(seeded);
+    return seeded;
   }
 
   const raw = fs.readFileSync(STORE_PATH, "utf-8");
