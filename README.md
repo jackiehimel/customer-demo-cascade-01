@@ -2,8 +2,10 @@
 
 Neutral full-stack application baseline built with Next.js and TypeScript.
 
-This repository contains framework, build, health, and CI plumbing only. It does
-not contain product functionality, customer material, or a benchmark solution.
+This repository started as framework, build, health, and CI plumbing only, and now
+also includes early product functionality (e.g. the demo-role selection flow and
+shared navigation shell) as individual stories are implemented. It still does not
+contain customer material or a benchmark solution.
 
 ## Prerequisites
 
