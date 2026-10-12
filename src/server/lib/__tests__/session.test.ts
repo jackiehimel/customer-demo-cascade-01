@@ -35,6 +35,13 @@ test("parseDemoRoleFromRequest returns null for an unrecognized role value", () 
   assert.equal(parseDemoRoleFromRequest(request), null);
 });
 
+test("parseDemoRoleFromRequest returns null for a malformed percent-encoded cookie value instead of throwing", () => {
+  const request = new Request("http://localhost/api/session/role", {
+    headers: { cookie: `${DEMO_ROLE_COOKIE}=%zz` },
+  });
+  assert.equal(parseDemoRoleFromRequest(request), null);
+});
+
 test("parseDemoRoleFromRequest finds the demo-role cookie among several cookies", () => {
   const request = new Request("http://localhost/api/session/role", {
     headers: { cookie: `other=1; ${DEMO_ROLE_COOKIE}=administrator; another=2` },

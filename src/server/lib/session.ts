@@ -50,7 +50,14 @@ export function parseDemoRoleFromRequest(request: Request): DemoRole | null {
       continue;
     }
     const rawValue = part.slice(separatorIndex + 1).trim();
-    const value = decodeURIComponent(rawValue);
+    let value: string;
+    try {
+      value = decodeURIComponent(rawValue);
+    } catch {
+      // Malformed percent-encoding (e.g. `%zz`) — treat the same as an
+      // unrecognized role rather than letting `URIError` crash the request.
+      return null;
+    }
     return isDemoRole(value) ? value : null;
   }
 
