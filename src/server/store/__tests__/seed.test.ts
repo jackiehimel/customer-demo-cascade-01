@@ -50,3 +50,25 @@ test("createSeedStore returns the expected day-one world", () => {
 test("createSeedStore is deterministic across calls", () => {
   assert.deepEqual(createSeedStore(), createSeedStore());
 });
+
+test("createSeedStore returns a fresh signals array each call, not a shared reference", () => {
+  // Every array field on the seed store must be a fresh copy per call so that
+  // in-place mutation of one caller's store (e.g. `store.signals.push(...)`,
+  // the pattern `db.ts`'s own JSDoc recommends) can never leak into a later
+  // `createSeedStore()` call, such as the one `POST /api/admin/reset` relies
+  // on to restore the true "day one" world.
+  const first = createSeedStore();
+  first.signals.push({
+    id: "SIG-999",
+    participantId: "PERSON-001",
+    type: "activity",
+    observedAt: "2024-02-01T00:00:00.000Z",
+    provenance: { source: "test" },
+  });
+
+  const second = createSeedStore();
+  assert.deepEqual(
+    second.signals.map((s) => s.id),
+    ["SIG-001", "SIG-002", "SIG-003", "SIG-004"]
+  );
+});

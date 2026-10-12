@@ -136,7 +136,12 @@ export function createSeedStore(): Store {
     participants: [PARTICIPANT],
     courses: [COURSE],
     playbookVersions: [PLAYBOOK_V1, PLAYBOOK_V2],
-    signals: SIGNALS,
+    // Fresh copy — `SIGNALS` is a module-level constant shared across every
+    // call, so returning it directly would let a caller's in-place mutation
+    // (e.g. `store.signals.push(...)`, the documented store-mutation pattern)
+    // permanently corrupt every future seed snapshot for the life of the
+    // process, including the one `POST /api/admin/reset` relies on.
+    signals: [...SIGNALS],
     conditions: [],
     opportunities: [],
     communicationDrafts: [],
