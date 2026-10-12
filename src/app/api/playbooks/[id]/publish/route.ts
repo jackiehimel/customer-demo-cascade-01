@@ -3,10 +3,10 @@
  * `id` is the dynamic route segment (e.g. "PLAYBOOK-001-V2"). Delegates all
  * validation and mutation to `publishPlaybookVersion`
  * (`src/server/domain/playbooks.ts`); this route is only responsible for
- * wiring that domain call, the rule-engine trigger (stubbed — see
- * `src/server/domain/ruleEngine.ts`), and the `playbook.published` audit
- * event into a single `withStoreLock` transaction, then mapping the result
- * onto the right HTTP status.
+ * wiring that domain call, the rule-engine evaluation
+ * (`src/server/domain/rules.ts`), and the `playbook.published` audit event
+ * into a single `withStoreLock` transaction, then mapping the result onto
+ * the right HTTP status.
  */
 
 // The explicit ".js" extension (vs. the bare "next/server") lets this route's
@@ -18,7 +18,7 @@ import {
   publishPlaybookVersion,
   type PublishPlaybookVersionResult,
 } from "../../../../../server/domain/playbooks.ts";
-import { evaluateProgramRule } from "../../../../../server/domain/ruleEngine.ts";
+import { evaluateProgramRule } from "../../../../../server/domain/rules.ts";
 import { recordAuditEvent } from "../../../../../server/lib/audit.ts";
 import { loadStore, saveStore, withStoreLock } from "../../../../../server/store/db.ts";
 
