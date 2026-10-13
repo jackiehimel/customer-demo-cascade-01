@@ -26,25 +26,28 @@ export default async function OpportunityDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const store = loadStore();
-  const opportunity = getOpportunityDetail(store, id);
 
-  if (!opportunity) {
-    notFound();
-  }
+  const result = await withStoreLock(() => {
+    const store = loadStore();
+    const rawOpportunity = store.opportunities.find((candidate) => candidate.id === id);
+    if (!rawOpportunity) {
+      return { opportunity: undefined, draft: undefined };
+    }
 
-  const rawOpportunity = store.opportunities.find((candidate) => candidate.id === id);
-  if (!rawOpportunity) {
-    notFound();
-  }
-
-  const { draft } = await withStoreLock(() => {
-    const result = getOrCreateDraft(store, rawOpportunity);
-    if (result.created) {
+    const opportunity = getOpportunityDetail(store, id);
+    const draftResult = getOrCreateDraft(store, rawOpportunity);
+    if (draftResult.created) {
       saveStore(store);
     }
-    return result;
+
+    return { opportunity, draft: draftResult.draft };
   });
+
+  if (!result.opportunity || !result.draft) {
+    notFound();
+  }
+
+  const { opportunity, draft } = result;
 
   return (
     <main>
