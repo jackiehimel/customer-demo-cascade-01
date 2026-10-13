@@ -4,10 +4,8 @@
  * `listOpportunities` (`src/server/domain/opportunities.ts`) — the same
  * function backing `GET /api/opportunities` — sorted by priority then
  * recency, with a visible badge on high-priority rows and a keyboard-operable
- * link into each opportunity's detail page.
- *
- * The detail page (`/advisor/opportunities/[id]`) is built in a later story —
- * the link target may 404 until then.
+ * link into each opportunity's "Why" detail page
+ * (`/advisor/opportunities/[id]`, rendered via `src/components/WhyPanel.tsx`).
  */
 
 import Link from "next/link";
