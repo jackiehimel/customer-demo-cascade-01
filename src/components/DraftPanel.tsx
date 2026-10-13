@@ -126,7 +126,7 @@ export default function DraftPanel({ draft: initialDraft }: DraftPanelProps) {
         <dd>{draft.id}</dd>
         <dt>Review status</dt>
         <dd>
-          {draft.reviewConfirmed ? (
+          {draft.reviewConfirmed && draft.content === draftText ? (
             "Reviewed"
           ) : (
             <span role="status">Awaiting review</span>
@@ -171,7 +171,11 @@ export default function DraftPanel({ draft: initialDraft }: DraftPanelProps) {
         >
           Confirm review
         </button>
-        <button type="button" onClick={handleSend} disabled={isPending || isSent}>
+        <button
+          type="button"
+          onClick={handleSend}
+          disabled={isPending || isSent || !draft.reviewConfirmed || draft.content !== draftText}
+        >
           Send
         </button>
       </div>

@@ -160,6 +160,15 @@ export type EditDraftContentResult =
  * rejected with `{ status: "already_sent" }` and the draft is left
  * byte-for-byte unchanged.
  *
+ * Critically, the human-review gate `sendDraft` enforces is a guarantee about
+ * the *content being sent*, not merely "review happened at some point". If a
+ * draft was already `reviewConfirmed` and this edit actually changes its
+ * content, that confirmation no longer applies to the new content — so this
+ * resets `reviewConfirmed` back to `false`, requiring a fresh
+ * `confirmDraftReview` call before the edited draft can be sent. An edit that
+ * resubmits identical content (no-op edit) leaves `reviewConfirmed`
+ * untouched.
+ *
  * Returns `{ status: "not_found" }` (no mutation) when no draft with
  * `draftId` exists. Appends a `communicationDraft.edited` audit event only on
  * a successful edit.
@@ -176,8 +185,13 @@ export function editDraftContent(
     return { status: "already_sent" };
   }
 
+  const contentChanged = draft.content !== content;
+
   draft.content = content;
   draft.edited = true;
+  if (contentChanged) {
+    draft.reviewConfirmed = false;
+  }
 
   recordAuditEvent(store, {
     actor,

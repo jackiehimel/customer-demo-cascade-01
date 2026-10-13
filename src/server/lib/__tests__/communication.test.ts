@@ -156,6 +156,51 @@ test("editDraftContent rejects edits once the draft has been sent, leaving it un
   assert.deepEqual(store, before);
 });
 
+test("editDraftContent resets reviewConfirmed to false when content actually changes after a prior confirmation", () => {
+  const store = loadStore();
+  const draft = seedDraft(store);
+  confirmDraftReview(store, { draftId: draft.id, actor: "PERSON-001" });
+
+  const result = editDraftContent(store, {
+    draftId: draft.id,
+    content: "SNEAKY UNREVIEWED CONTENT",
+    actor: "PERSON-001",
+  });
+
+  assert.equal(result.status, "ok");
+  if (result.status === "ok") {
+    assert.equal(result.draft.content, "SNEAKY UNREVIEWED CONTENT");
+    assert.equal(result.draft.reviewConfirmed, false);
+  }
+});
+
+test("editDraftContent does not reset reviewConfirmed when the edit resubmits identical content", () => {
+  const store = loadStore();
+  const draft = seedDraft(store);
+  confirmDraftReview(store, { draftId: draft.id, actor: "PERSON-001" });
+
+  const result = editDraftContent(store, { draftId: draft.id, content: draft.content, actor: "PERSON-001" });
+
+  assert.equal(result.status, "ok");
+  if (result.status === "ok") {
+    assert.equal(result.draft.reviewConfirmed, true);
+  }
+});
+
+test("confirm -> edit -> send: sendDraft rejects sending content that was edited after confirmation", () => {
+  const store = loadStore();
+  const draft = seedDraft(store);
+  confirmDraftReview(store, { draftId: draft.id, actor: "PERSON-001" });
+  editDraftContent(store, { draftId: draft.id, content: "SNEAKY UNREVIEWED CONTENT", actor: "PERSON-001" });
+
+  const result = sendDraft(store, { draftId: draft.id, actor: "PERSON-001" });
+
+  assert.equal(result.status, "review_not_confirmed");
+  const stored = store.communicationDrafts.find((candidate) => candidate.id === draft.id);
+  assert.equal(stored?.sentAt, undefined);
+  assert.equal(stored?.content, "SNEAKY UNREVIEWED CONTENT");
+});
+
 test("confirmDraftReview sets reviewConfirmed: true and is idempotent", () => {
   const store = loadStore();
   const draft = seedDraft(store);
