@@ -1,5 +1,7 @@
 /**
- * Deterministic communication-draft generation.
+ * Deterministic communication-draft generation plus the human-review-gated
+ * state machine every draft moves through: generated → (optionally) edited →
+ * review confirmed → sent.
  *
  * `generateDraftContent` is a pure template function — no model credentials,
  * no network calls, no randomness — so the same `{ participantName,
@@ -12,9 +14,20 @@
  * and the opportunity detail page (`src/app/advisor/opportunities/[id]/page.tsx`,
  * via `DraftPanel`) — the same "one domain function, multiple call sites"
  * pattern `listOpportunities` establishes in `src/server/domain/opportunities.ts`.
- * It only reads/writes `store` in place and never touches disk itself; callers
- * persist via `saveStore` (typically inside `withStoreLock`), the same as
- * `evaluateProgramRule` (`src/server/domain/rules.ts`).
+ *
+ * `editDraftContent`, `confirmDraftReview`, and `sendDraft` back the three
+ * distinct state-transition endpoints under `src/app/api/drafts/[id]/`
+ * (`route.ts`'s `PATCH`, `confirm-review/route.ts`, and `send/route.ts`
+ * respectively) — one domain function per endpoint, matching the card's
+ * explicit route list rather than overloading a single mutation. Once a draft
+ * is sent (`sentAt` set) it is immutable: edits and review confirmation are
+ * both rejected, and sending again is a no-op rejection rather than a
+ * duplicate transition.
+ *
+ * Every function here only reads/writes `store` in place and never touches
+ * disk itself; callers persist via `saveStore` (typically inside
+ * `withStoreLock`), the same as `evaluateProgramRule`
+ * (`src/server/domain/rules.ts`).
  */
 
 import { recordAuditEvent } from "./audit.ts";
@@ -125,4 +138,172 @@ export function getOrCreateDraft(store: Store, opportunity: Opportunity): GetOrC
   });
 
   return { draft, created: true };
+}
+
+export interface EditDraftContentParams {
+  draftId: Id;
+  content: string;
+  /** The advisor performing the edit, stamped onto the resulting audit event. */
+  actor: Id;
+}
+
+export type EditDraftContentResult =
+  | { status: "not_found" }
+  /** The draft has already been sent; `sentAt` is immutable history, not a draft to keep tweaking. */
+  | { status: "already_sent" }
+  | { status: "ok"; draft: CommunicationDraft };
+
+/**
+ * Edits a draft's `content` in place and marks it `edited: true`. A draft can
+ * be edited freely (any number of times, with the new content preserved
+ * verbatim) right up until it is sent — once `sentAt` is set, edits are
+ * rejected with `{ status: "already_sent" }` and the draft is left
+ * byte-for-byte unchanged.
+ *
+ * Critically, the human-review gate `sendDraft` enforces is a guarantee about
+ * the *content being sent*, not merely "review happened at some point". If a
+ * draft was already `reviewConfirmed` and this edit actually changes its
+ * content, that confirmation no longer applies to the new content — so this
+ * resets `reviewConfirmed` back to `false`, requiring a fresh
+ * `confirmDraftReview` call before the edited draft can be sent. An edit that
+ * resubmits identical content (no-op edit) leaves `reviewConfirmed`
+ * untouched.
+ *
+ * Returns `{ status: "not_found" }` (no mutation) when no draft with
+ * `draftId` exists. Appends a `communicationDraft.edited` audit event only on
+ * a successful edit.
+ */
+export function editDraftContent(
+  store: Store,
+  { draftId, content, actor }: EditDraftContentParams
+): EditDraftContentResult {
+  const draft = store.communicationDrafts.find((candidate) => candidate.id === draftId);
+  if (!draft) {
+    return { status: "not_found" };
+  }
+  if (draft.sentAt) {
+    return { status: "already_sent" };
+  }
+
+  const contentChanged = draft.content !== content;
+
+  draft.content = content;
+  draft.edited = true;
+  if (contentChanged) {
+    draft.reviewConfirmed = false;
+  }
+
+  recordAuditEvent(store, {
+    actor,
+    entityType: "communicationDraft",
+    entityId: draft.id,
+    eventType: "communicationDraft.edited",
+    summary: `Draft ${draft.id} edited`,
+  });
+
+  return { status: "ok", draft };
+}
+
+export interface ConfirmDraftReviewParams {
+  draftId: Id;
+  /** The advisor confirming review, stamped onto the resulting audit event. */
+  actor: Id;
+}
+
+export type ConfirmDraftReviewResult =
+  | { status: "not_found" }
+  /** The draft has already been sent; confirming review on sent history is meaningless. */
+  | { status: "already_sent" }
+  | { status: "ok"; draft: CommunicationDraft; alreadyConfirmed: boolean };
+
+/**
+ * Sets a draft's `reviewConfirmed: true` — the *only* mechanism that does so.
+ * Fetching a draft (`GET /api/opportunities/[id]/draft`, `getOrCreateDraft`)
+ * never sets this flag; only this explicit confirmation satisfies the
+ * human-review gate `sendDraft` enforces.
+ *
+ * Idempotent: re-confirming an already-confirmed draft returns `{ status:
+ * "ok", alreadyConfirmed: true }` without appending a duplicate audit event.
+ * Returns `{ status: "not_found" }` when no draft with `draftId` exists, and
+ * `{ status: "already_sent" }` (no mutation) once the draft has been sent.
+ */
+export function confirmDraftReview(
+  store: Store,
+  { draftId, actor }: ConfirmDraftReviewParams
+): ConfirmDraftReviewResult {
+  const draft = store.communicationDrafts.find((candidate) => candidate.id === draftId);
+  if (!draft) {
+    return { status: "not_found" };
+  }
+  if (draft.sentAt) {
+    return { status: "already_sent" };
+  }
+  if (draft.reviewConfirmed) {
+    return { status: "ok", draft, alreadyConfirmed: true };
+  }
+
+  draft.reviewConfirmed = true;
+
+  recordAuditEvent(store, {
+    actor,
+    entityType: "communicationDraft",
+    entityId: draft.id,
+    eventType: "communicationDraft.reviewConfirmed",
+    summary: `Draft ${draft.id} review confirmed`,
+  });
+
+  return { status: "ok", draft, alreadyConfirmed: false };
+}
+
+export interface SendDraftParams {
+  draftId: Id;
+  /** The advisor sending the draft, stamped onto the resulting audit event. */
+  actor: Id;
+}
+
+export type SendDraftResult =
+  | { status: "not_found" }
+  /** `reviewConfirmed` is false — the human-review gate blocks the send; the draft is left entirely unchanged. */
+  | { status: "review_not_confirmed" }
+  /** Sending is a one-time, terminal transition — a second send is rejected rather than re-stamping `sentAt`. */
+  | { status: "already_sent"; draft: CommunicationDraft }
+  | { status: "sent"; draft: CommunicationDraft };
+
+/**
+ * The simulated "send" transition: stamps `sentAt` on a draft, but only once
+ * `reviewConfirmed` is `true`. If review hasn't been confirmed, returns `{
+ * status: "review_not_confirmed" }` and leaves the draft completely
+ * unchanged — no partial mutation, no audit event.
+ *
+ * Returns `{ status: "not_found" }` when no draft with `draftId` exists, and
+ * `{ status: "already_sent" }` (no mutation) if the draft was already sent.
+ * On success, appends a `communicationDraft.sent` audit event.
+ *
+ * Pending-outcome creation (in the same transaction as the send) is a
+ * follow-up story's responsibility — see `src/server/lib/communication.ts`'s
+ * module docs — so a successful send here only stamps `sentAt`.
+ */
+export function sendDraft(store: Store, { draftId, actor }: SendDraftParams): SendDraftResult {
+  const draft = store.communicationDrafts.find((candidate) => candidate.id === draftId);
+  if (!draft) {
+    return { status: "not_found" };
+  }
+  if (draft.sentAt) {
+    return { status: "already_sent", draft };
+  }
+  if (!draft.reviewConfirmed) {
+    return { status: "review_not_confirmed" };
+  }
+
+  draft.sentAt = getCurrentTime().toISOString();
+
+  recordAuditEvent(store, {
+    actor,
+    entityType: "communicationDraft",
+    entityId: draft.id,
+    eventType: "communicationDraft.sent",
+    summary: `Draft ${draft.id} sent`,
+  });
+
+  return { status: "sent", draft };
 }

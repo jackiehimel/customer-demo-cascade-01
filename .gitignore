@@ -42,3 +42,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# cascade agent context (pre-fetched, session-local)
+.cascade/context/
